@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>1週間の献立プランナー</title>
+<style>
+  :root {
+    --bg: #f7f7fb;
+    --card: #ffffff;
+    --ink: #222;
+    --muted: #68718a;
+    --brand: #3b82f6;
+    --accent: #10b981;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --radius: 14px;
+    --shadow: 0 6px 18px rgba(18, 32, 73, 0.08);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans JP", Helvetica, Arial, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5; backdrop-filter: blur(6px);
+    background: rgba(247,247,251,0.85); border-bottom: 1px solid #e9ecf4;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 22px; margin: 4px 0 8px; }
+  .sub { color: var(--muted); font-size: 13px; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+  button, select, input, textarea {
+    font: inherit; border-radius: 10px; border: 1px solid #e5e7eb; background: #fff; color: var(--ink);
+  }
+  button { padding: 8px 12px; cursor: pointer; box-shadow: var(--shadow); border: none; }
+  button.primary { background: var(--brand); color: #fff; }
+  button.success { background: var(--accent); color: #fff; }
+  button.warn { background: var(--warn); color: #fff; }
+  button.danger { background: var(--danger); color: #fff; }
+  button.ghost { background: #fff; border: 1px solid #e5e7eb; }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .grid { display: grid; gap: 14px; grid-template-columns: 1.4fr 1fr; align-items: start; }
+  @media (max-width: 980px){ .grid { grid-template-columns: 1fr; } }
+
+  .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; }
+  .card h2 { font-size: 18px; margin: 0 0 10px; }
+
+  .planner { overflow: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { position: sticky; top: 0; background: #f3f6ff; z-index: 2; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px; vertical-align: top; }
+  th { font-weight: 700; font-size: 13px; }
+  td { background: #fff; }
+
+  .cell-selects { display: grid; gap: 6px; grid-template-columns: 1fr; }
+  .select-row { display: flex; gap: 6px; }
+  .select-row select { flex: 1; padding: 6px 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: #eef2ff; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+  .muted { color: var(--muted); font-size: 12px; }
+
+  .two { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 680px){ .two { grid-template-columns: 1fr; } }
+
+  .list { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 680px){ .list { grid-template-columns: 1fr; } }
+  .list .item { background: #fafafa; border: 1px solid #eee; border-radius: 12px; padding: 10px; display: flex; align-items: center; gap: 10px; }
+  .list .item input[type="checkbox"]{ transform: scale(1.15); }
+  .list .item .name { flex: 1; }
+  .list .item .qty { min-width: 72px; text-align: right; }
+
+  .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #111827; color: #f9fafb; padding: 2px 6px; border-radius: 6px; font-size: 12px; }
+  textarea { width: 100%; min-height: 120px; padding: 8px 10px; }
+  .inline { display: inline-flex; align-items: center; gap: 6px; }
+  .right { text-align: right; }
+
+  /* レシピ管理（全幅） */
+  .recipes-card { grid-column: 1 / -1; }
+  .recipes-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 980px){ .recipes-grid { grid-template-columns: 1fr; } }
+  #recipeList { max-height: 420px; overflow: auto; border: 1px solid #eee; border-radius: 12px; padding: 8px; }
+  #recipeList button { width: 100%; text-align: left; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>1週間の献立プランナー</h1>
+      <div class="sub">朝・昼・晩で<strong>別々のレシピ群</strong>を管理。各食事は<strong>1〜3 皿</strong>を選択可能。選ぶだけで<strong>買い物リスト自動生成</strong>。設定はローカル保存＆入出力できます。</div>
+      <div class="toolbar">
+        <button class="primary" id="btnExport">設定を書き出し（JSON）</button>
+<input type="file" id="fileImport" accept="application/json" style="display:none" />
+<button class="ghost" id="btnImport">設定を読み込み（JSON）</button>
+        <button class="success" id="btnExportList">買い物リスト書き出し（.txt）</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap grid" id="app">
+    <section class="card planner">
+      <h2>週間プラン</h2>
+      <div class="muted">各セル内の「＋」「−」で皿数（1〜3）を調整できます。</div>
+      <div id="plannerTableWrap"></div>
+    </section>
+
+    <section class="card">
+      <h2>買い物リスト</h2>
+      <div class="two">
+        <div class="muted">同じ食材名は自動で合算します（数量の先頭が数字の場合に加算）。</div>
+        <div class="right">
+          <button id="btnClearChecked" class="ghost">チェック済みを非表示</button>
+          <button id="btnResetChecks" class="ghost">チェックをすべて外す</button>
+          <button id="btnCheckAll" class="ghost">すべてにチェック</button>
+        </div>
+      </div>
+      <div id="shoppingList" class="list" style="margin-top:10px"></div>
+    </section>
+
+    <section class="card recipes-card">
+      <h2>レシピ管理（朝・昼・晩で別リスト）</h2>
+      <div class="recipes-grid">
+        <div>
+          <label>食事区分
+            <select id="mealType">
+              <option value="breakfast">朝</option>
+              <option value="lunch">昼</option>
+              <option value="dinner">晩</option>
+            </select>
+          </label>
+          <div style="height:8px"></div>
+          <label>レシピ名
+            <input id="recipeName" placeholder="例：鮭おにぎり" />
+          </label>
+          <div style="height:8px"></div>
+          <label>材料（1行＝1食材）<br>
+            <span class="muted">「食材名 スペース 数量・単位」推奨（例：卵 2個 / 玉ねぎ 0.5個）。先頭が数字の場合は合算されます。</span>
+            <textarea id="recipeIngr" placeholder="米 0.5合\n鮭フレーク 1袋\n海苔 1枚"></textarea>
+          </label>
+          <div style="height:8px"></div>
+          <div class="inline">
+            <button id="btnAddRecipe" class="primary">このレシピを追加</button>
+            <button id="btnUpdateRecipe" class="success" disabled>上書き保存</button>
+            <button id="btnDeleteRecipe" class="danger" disabled>削除</button>
+          </div>
+        </div>
+        <div>
+          <div class="muted">レシピ一覧（選択して編集）</div>
+          <div id="recipeList"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+<script>
+// ========== データモデル ==========
+const DAYS = ["月曜日","火曜日","水曜日","木曜日","金曜日","土曜日","日曜日"];
+const MEALS = [
+  { key: 'breakfast', label: '朝' },
+  { key: 'lunch', label: '昼' },
+  { key: 'dinner', label: '晩' },
+];
+
+const DEFAULT_DATA = {
+  recipePools: {
+    breakfast: {
+  "トースト＆卵": ["食パン 2枚","卵 1個","バター 適量"],
+  "ヨーグルトとフルーツ": ["ヨーグルト 1個","バナナ 1本","ブルーベリー 50g"],
+  "おにぎり（鮭）": ["米 0.5合","鮭フレーク 1袋","海苔 1枚"],
+  "和風卵かけご飯": ["米 0.5合","卵 1個","しょうゆ 適量","刻み海苔 適量"],
+  "フレンチトースト": ["食パン 1枚","卵 1個","牛乳 100ml","バター 適量","メープルシロップ 適量"],
+  "ベーグル＆クリームチーズ": ["ベーグル 1個","クリームチーズ 20g","ハム 1枚","レタス 1枚"],
+  "シリアルと牛乳": ["シリアル 40g","牛乳 150ml","バナナ 1本"],
+  "納豆ご飯": ["米 0.5合","納豆 1パック","刻みネギ 適量","しょうゆ 適量"],
+  "バナナスムージー": ["バナナ 1本","牛乳 200ml","ヨーグルト 大さじ2","はちみつ 小さじ1"],
+  "具だくさん味噌汁とご飯": ["米 0.5合","味噌 大さじ1","豆腐 1/4丁","わかめ 適量","長ねぎ 1/4本"],
+  "パンケーキ＆ベリー": ["ホットケーキミックス 100g","卵 1個","牛乳 100ml","ミックスベリー 50g","メープルシロップ 適量"],
+  "おかゆと梅干し": ["米 0.5合","水 400ml","梅干し 1個","塩 少々"],
+  "クロワッサンとカフェオレ": ["クロワッサン 1個","カフェオレ 200ml","バター 10g"],
+  "グラノーラヨーグルト": ["グラノーラ 40g","ヨーグルト 100g","はちみつ 小さじ1"],
+  "アボカドトースト": ["食パン 1枚","アボカド 1/2個","レモン汁 少々","塩 適量","黒こしょう 適量"],
+  "みそ汁と玄米": ["玄米 0.5合","味噌 大さじ1","豆腐 1/4丁","わかめ 適量","長ねぎ 1/4本"],
+  "バターシュガートースト": ["食パン 1枚","バター 10g","グラニュー糖 小さじ2"],
+  "フルーツサンド": ["食パン 2枚","いちご 3個","キウイ 1/2個","ホイップクリーム 50g"],
+  "スムージーボウル": ["バナナ 1本","冷凍マンゴー 50g","ヨーグルト 50g","グラノーラ 20g","ミント 適量"],
+  "ほうれん草入りスクランブルエッグ": ["卵 2個","ほうれん草 1株","バター 5g","塩 少々"],
+  "しらす大根おろしご飯": ["米 0.5合","しらす 30g","大根おろし 50g","醤油 少々"],
+  "キッシュ風オムレツ": ["卵 2個","ほうれん草 1株","ベーコン 1枚","チーズ 20g","牛乳 50ml"],
+  "バターロール＆ジャム": ["バターロール 2個","いちごジャム 適量","バター 10g"],
+  "もちときな粉": ["切り餅 2個","きな粉 大さじ1","砂糖 小さじ2","塩 ひとつまみ"],
+  "トマトとモッツァレラのカプレーゼ": ["トマト 1/2個","モッツァレラチーズ 50g","バジル 2枚","オリーブオイル 小さじ1"],
+  "豆乳バナナドリンク": ["豆乳 200ml","バナナ 1本","はちみつ 小さじ1"],
+  "ごま塩おにぎり": ["米 0.5合","ごま塩 小さじ1"],
+  "ツナとコーンのマフィン": ["マフィン 1個","ツナ缶 1/2缶","コーン 20g","マヨネーズ 小さじ1"],
+  "マンゴーヨーグルト": ["ヨーグルト 100g","マンゴー（冷凍）50g","はちみつ 小さじ1"],
+  "野菜スープと全粒粉パン": ["全粒粉パン 1枚","にんじん 1/4本","玉ねぎ 1/4個","キャベツ 1枚","コンソメ 小さじ1"],
+  "エッグベネディクト": ["イングリッシュマフィン 1個","卵 1個","ベーコン 1枚","オランデーズソース 適量","ほうれん草 1株"],
+"豆腐と野菜の味噌汁＆雑穀ごはん": ["雑穀米 0.5合","木綿豆腐 1/4丁","小松菜 1株","味噌 大さじ1","長ねぎ 1/4本"],
+"ベリースムージー": ["冷凍ベリーミックス 50g","バナナ 1本","牛乳 150ml","はちみつ 小さじ1"],
+"おにぎり（梅しそ）": ["米 0.5合","梅干し 1個","大葉 1枚","塩 少々"],
+"ハムエッグとトースト": ["食パン 1枚","卵 1個","ハム 1枚","バター 5g"],
+"トマトとチーズのオムレツ": ["卵 2個","トマト 1/4個","ピザ用チーズ 20g","塩 少々"],
+"和風だし巻き卵": ["卵 2個","だし 50ml","砂糖 小さじ1","醤油 少々"],
+"スコーンと紅茶": ["スコーン 1個","クロテッドクリーム 適量","紅茶 200ml"],
+"アサイーボウル": ["アサイーピューレ 100g","バナナ 1本","グラノーラ 20g","いちご 2個"],
+"ほうれん草とベーコンのキッシュ": ["冷凍パイシート 1枚","卵 1個","生クリーム 50ml","ほうれん草 1株","ベーコン 1枚"]
+},
+lunch: {
+  "焼きそば": ["中華麺 1玉","豚こま 80g","キャベツ 2枚","にんじん 1/4本","ソース 適量"],
+  "親子丼": ["米 0.5合","鶏もも 120g","卵 1個","玉ねぎ 1/4個","めんつゆ 適量"],
+  "サラダうどん": ["うどん 1玉","レタス 2枚","トマト 1/2個","ツナ缶 1缶","ドレッシング 適量"],
+  "チャーハン": ["米 0.5合","卵 1個","チャーシュー 30g","長ねぎ 1/4本","醤油 小さじ1"],
+  "冷やし中華": ["中華麺 1玉","きゅうり 1/2本","ハム 2枚","卵 1個","冷やし中華スープ 1袋"],
+  "カツ丼": ["米 0.5合","とんかつ 1枚","卵 1個","玉ねぎ 1/4個","めんつゆ 適量"],
+  "ナポリタン": ["スパゲッティ 100g","玉ねぎ 1/4個","ピーマン 1個","ウインナー 2本","ケチャップ 大さじ3"],
+  "鶏そぼろ丼": ["米 0.5合","鶏ひき肉 100g","醤油 大さじ1","砂糖 小さじ1","みりん 大さじ1","卵 1個"],
+  "オムライス": ["米 0.5合","鶏もも 80g","玉ねぎ 1/4個","ケチャップ 大さじ3","卵 2個"],
+  "タコライス": ["米 0.5合","合い挽き肉 80g","レタス 2枚","トマト 1/2個","チーズ 20g","タコスソース 大さじ2"],
+  "ビビンバ": ["米 0.5合","牛こま 80g","ほうれん草 1株","もやし 50g","人参 1/4本","コチュジャン 大さじ1"],
+  "魚介のペペロンチーノ": ["スパゲッティ 100g","むきエビ 50g","あさり 50g","にんにく 1片","唐辛子 1本","オリーブオイル 大さじ1"],
+  "冷やしそば": ["そば 1玉","きゅうり 1/2本","錦糸卵 適量","海苔 適量","めんつゆ 適量"],
+  "ガパオライス": ["米 0.5合","鶏ひき肉 100g","パプリカ 1/4個","バジル 5枚","ナンプラー 小さじ2","卵 1個"],
+  "タンドリーチキン": ["鶏もも 120g","ヨーグルト 大さじ2","カレー粉 小さじ1","レモン汁 小さじ1","塩 少々"],
+  "けんちんうどん": ["うどん 1玉","大根 4cm","にんじん 1/4本","ごぼう 1/4本","しいたけ 1枚","味噌 大さじ1"],
+  "サーモンちらし寿司": ["酢飯 0.5合","刺身用サーモン 50g","錦糸卵 適量","きゅうり 1/4本","いくら 小さじ2"],
+  "ハムチーズホットサンド": ["食パン 2枚","ハム 2枚","スライスチーズ 1枚","バター 5g"],
+  "ラタトゥイユとバゲット": ["ズッキーニ 1/2本","なす 1/2本","パプリカ 1/4個","トマト缶 100g","オリーブオイル 大さじ1","バゲット 1切"],
+  "鶏団子スープごはん": ["米 0.5合","鶏ひき肉 80g","長ねぎ 1/4本","白菜 1枚","しょうが 少々","塩 少々"],
+  "ハンバーグ弁当": ["合い挽き肉 150g","玉ねぎ 1/4個","パン粉 大さじ3","卵 1個","ケチャップ 大さじ1"],
+  "ツナマヨサンド": ["食パン 2枚","ツナ缶 1缶","マヨネーズ 大さじ1","レタス 1枚"],
+  "カレーうどん": ["うどん 1玉","カレールー 1かけ","だし 200ml","長ねぎ 1/4本"],
+  "トマトとモッツァレラのパスタ": ["パスタ 80g","トマト 1個","モッツァレラ 50g","バジル 適量"],
+  "鮭のムニエル": ["鮭切り身 1切","小麦粉 適量","バター 10g","レモン 1/4個"],
+  "明太クリームパスタ": ["スパゲッティ 100g","明太子 1/2腹","生クリーム 50ml","バター 5g","刻み海苔 適量"],
+"チキン南蛮定食": ["米 0.5合","鶏むね肉 120g","卵 1個","小麦粉 適量","甘酢たれ 適量","タルタルソース 適量"],
+"五目炒飯": ["米 0.5合","卵 1個","チャーシュー 30g","えび 30g","グリンピース 10g","醤油 小さじ1"],
+"トムヤムクンヌードル": ["米麺 80g","むきえび 50g","トムヤムペースト 大さじ1","パクチー 適量"],
+"ミートソースパスタ": ["スパゲッティ 100g","合い挽き肉 80g","玉ねぎ 1/4個","トマト缶 100g","ケチャップ 大さじ1"],
+"鮭ときのこの炊き込みご飯": ["米 0.5合","鮭 1/2切","しめじ 30g","醤油 小さじ2","みりん 小さじ2"],
+"厚揚げのそぼろあんかけ丼": ["米 0.5合","厚揚げ 100g","鶏ひき肉 50g","醤油 大さじ1","片栗粉 小さじ1"],
+"バインミー": ["フランスパン 1本","豚チャーシュー 50g","なます 適量","パクチー 適量","マヨネーズ 適量"],
+"クリームシチュー＆パン": ["フランスパン 1切","鶏もも肉 60g","じゃがいも 1/2個","にんじん 1/4本","玉ねぎ 1/4個","シチュールー 1かけ"],
+"冷や汁": ["米 0.5合","きゅうり 1/4本","味噌 大さじ1","豆腐 50g","だし 150ml","みょうが 1/2個"]
+},
+dinner: {
+  "カレーライス": ["米 1合","牛こま 150g","じゃがいも 1個","玉ねぎ 1個","にんじん 1本","カレールー 1/4箱"],
+  "鯖の味噌煮": ["鯖切り身 1切","味噌 大さじ1","みりん 大さじ1","砂糖 小さじ1","しょうが 1片"],
+  "豚汁＆ごはん": ["米 1合","豚バラ 120g","大根 6cm","にんじん 1/3本","ごぼう 1/4本","味噌 大さじ1"],
+  "照り焼きチキン": ["米 1合","鶏もも 150g","醤油 大さじ1","みりん 大さじ1","砂糖 小さじ1"],
+  "肉じゃが": ["米 1合","牛こま 120g","じゃがいも 2個","玉ねぎ 1個","にんじん 1/2本","醤油 大さじ1","みりん 大さじ1"],
+  "焼き魚定食": ["米 1合","鮭切り身 1切","大根おろし 適量","味噌汁 1杯"],
+  "天ぷら盛り合わせ": ["米 1合","海老 2尾","かぼちゃ 2切","なす 1/2本","天ぷら粉 50g","天つゆ 適量"],
+  "すき焼き": ["米 1合","牛肉 150g","白菜 2枚","春菊 1/4束","しらたき 50g","焼き豆腐 1/4丁","割下 100ml"],
+  "麻婆豆腐": ["米 1合","豆腐 1丁","豚ひき肉 120g","長ねぎ 1/2本","麻婆豆腐の素 1袋"],
+  "ハンバーグ": ["米 1合","合い挽き肉 150g","玉ねぎ 1/2個","パン粉 20g","卵 1個","デミグラスソース 適量"],
+  "牛丼": ["米 1合","牛バラ 150g","玉ねぎ 1個","醤油 大さじ2","みりん 大さじ2","砂糖 小さじ1"],
+  "鮭のホイル焼き": ["鮭切り身 1切","玉ねぎ 1/4個","えのき 50g","バター 10g","塩 少々"],
+  "ロールキャベツ": ["キャベツ 2枚","合い挽き肉 120g","玉ねぎ 1/4個","パン粉 10g","卵 1/2個","コンソメスープ 200ml"],
+  "筑前煮": ["鶏もも 120g","ごぼう 1/4本","にんじん 1/3本","れんこん 4cm","こんにゃく 1/4枚","醤油 大さじ1","みりん 大さじ1"],
+  "アクアパッツァ": ["白身魚切り身 1切","あさり 50g","ミニトマト 4個","オリーブオイル 大さじ1","にんにく 1片"],
+  "八宝菜": ["豚こま 100g","白菜 2枚","にんじん 1/4本","ピーマン 1個","うずら卵（水煮）3個","中華スープ 150ml"],
+  "チキンカツ": ["鶏むね 150g","パン粉 20g","卵 1/2個","小麦粉 適量","揚げ油 適量","ソース 適量"],
+  "サバの竜田揚げ": ["サバ切り身 1切","醤油 大さじ1","みりん 大さじ1","片栗粉 適量","揚げ油 適量"],
+  "豆腐ステーキ": ["木綿豆腐 1/2丁","醤油 小さじ2","みりん 小さじ2","片栗粉 適量","小ねぎ 適量"],
+  "ポークジンジャー": ["豚ロース 150g","玉ねぎ 1/4個","しょうが 1片","醤油 大さじ1","みりん 大さじ1"],
+  "鶏唐揚げ": ["鶏もも 150g","にんにく 1/4片","生姜 1/4片","醤油 大さじ1","片栗粉 大さじ1.5"],
+  "野菜炒め": ["豚こま 80g","キャベツ 2枚","もやし 1/2袋","にんじん 1/4本","オイスターソース 小さじ2"],
+  "たらこスパ": ["パスタ 80g","たらこ 1/2腹","バター 5g","刻み海苔 少々"],
+  "ブリの照り焼き": ["米 1合","ブリ切り身 1切","醤油 大さじ1","みりん 大さじ1","砂糖 小さじ1"],
+"チンジャオロース": ["米 1合","牛肉 100g","ピーマン 2個","たけのこ水煮 50g","オイスターソース 大さじ1"],
+"サーモンのムニエル": ["米 1合","サーモン切り身 1切","小麦粉 適量","バター 10g","レモン 1/4個"],
+"鶏の水炊き": ["米 1合","鶏もも 120g","白菜 2枚","長ねぎ 1/4本","しいたけ 1枚","ポン酢 適量"],
+"スペアリブの煮込み": ["米 1合","豚スペアリブ 200g","玉ねぎ 1/2個","にんじん 1/2本","トマト缶 100g","赤ワイン 50ml"],
+"キーマカレー": ["米 1合","合い挽き肉 120g","玉ねぎ 1/2個","にんじん 1/4本","カレールー 1かけ"],
+"鮭とほうれん草のグラタン": ["米 1合","鮭 1/2切","ほうれん草 1株","ホワイトソース 100g","チーズ 20g"],
+"鴨南蛮そば": ["そば 1玉","鴨肉 50g","長ねぎ 1/2本","だし 250ml","醤油 小さじ2"],
+"ラザニア": ["ラザニアシート 3枚","ミートソース 100g","ホワイトソース 100g","チーズ 30g"],
+"いわしの梅煮": ["米 1合","いわし 2尾","梅干し 1個","醤油 大さじ1","みりん 大さじ1"]
+}
+  },
+  planner: {}, // 後で初期化
+  checked: {} // ショッピングリストのチェック状態
+};
+
+// planner 初期化：各 day x meal に 3 つの枠（空文字）
+for (const day of DAYS){
+  DEFAULT_DATA.planner[day] = { breakfast:["", "", ""], lunch:["", "", ""], dinner:["", "", ""] };
+}
+
+let state = structuredClone(DEFAULT_DATA); // 起動時は常にデフォルト
+
+// ========== ユーティリティ ==========
+
+function downloadText(filename, text){
+  const blob = new Blob([text], {type: 'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+function sumQuantities(q1, q2){
+  // 文字列の先頭が数値なら加算。単位はそのまま（同一前提）。
+  const rx = /^\s*([0-9]+(?:\.[0-9]+)?)\s*(.*)$/;
+  const m1 = String(q1||"").match(rx);
+  const m2 = String(q2||"").match(rx);
+  if(m1 && m2){
+    const total = parseFloat(m1[1]) + parseFloat(m2[1]);
+    const unit = (m1[2]||m2[2]||"").trim();
+    return (Number.isInteger(total) ? String(total) : String(total)) + (unit ? (" "+unit) : "");
+  }
+  // 片方しか数値でない場合／どちらも非数値は結合表示
+  const s1 = (q1||"").trim(); const s2 = (q2||"").trim();
+  if(!s1) return s2; if(!s2) return s1; if(s1===s2) return s1; return s1 + " + " + s2;
+}
+
+// ========== UI 構築：週間プラン表 ==========
+function renderPlanner(){
+  const wrap = document.getElementById('plannerTableWrap');
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const trh = document.createElement('tr');
+  trh.appendChild(document.createElement('th')).textContent = '曜日 / 食事';
+  for(const meal of MEALS){
+    const th = document.createElement('th'); th.textContent = meal.label; trh.appendChild(th);
+  }
+  thead.appendChild(trh); table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+
+  for(const day of DAYS){
+    const tr = document.createElement('tr');
+    const th = document.createElement('th'); th.textContent = day; tr.appendChild(th);
+
+    for(const meal of MEALS){
+      const td = document.createElement('td');
+      const box = document.createElement('div'); box.className = 'cell-selects';
+
+      // 3行を用意
+      for(let i=0;i<3;i++){
+        const row = document.createElement('div'); row.className = 'select-row';
+        const sel = document.createElement('select'); sel.dataset.day = day; sel.dataset.meal = meal.key; sel.dataset.idx = String(i);
+        populateSelectOptions(sel, meal.key);
+        sel.value = state.planner[day][meal.key][i] || "";
+        sel.addEventListener('change', () => { onSelectChange(sel); });
+        row.appendChild(sel);
+        box.appendChild(row);
+      }
+
+      // 皿数コントロール
+      const ctrl = document.createElement('div'); ctrl.className = 'inline';
+      const btnAdd = document.createElement('button'); btnAdd.textContent = '＋'; btnAdd.className='ghost';
+      const btnDel = document.createElement('button'); btnDel.textContent = '−'; btnDel.className='ghost';
+      const span = document.createElement('span'); span.className = 'muted';
+      function updateRowsVisibility(){
+        const arr = state.planner[day][meal.key];
+        const filled = arr.reduce((n,v)=>n+(v?1:0),0);
+        span.textContent = ` 選択数: ${filled||1} / 3`;
+        [...box.children].forEach((row, idx)=>{
+          row.style.display = (idx < Math.max(1, filled)) ? '' : 'none';
+        });
+      }
+      btnAdd.addEventListener('click', ()=>{
+        const arr = state.planner[day][meal.key];
+        const filled = arr.filter(v=>v).length;
+        if(filled < 3){
+          const rows = [...box.children];
+          rows[filled].style.display = '';
+        }
+      });
+      btnDel.addEventListener('click', ()=>{
+        const arr = state.planner[day][meal.key];
+        const filled = arr.filter(v=>v).length;
+        if(filled > 1){
+          const lastIdx = arr.map((v,i)=>v?i:-1).filter(i=>i>=0).pop();
+          if(lastIdx!=null){ arr[lastIdx] = ""; const sel = box.querySelector(`select[data-idx="${lastIdx}"]`); if(sel){ sel.value = ""; }
+          updateShopping(); updateRowsVisibility(); }
+        }
+      });
+      ctrl.append(btnAdd, btnDel, span);
+
+      td.appendChild(box); td.appendChild(ctrl);
+      tr.appendChild(td);
+      setTimeout(updateRowsVisibility, 0);
+    }
+
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  wrap.innerHTML = ''; wrap.appendChild(table);
+}
+
+function populateSelectOptions(sel, mealKey){
+  sel.innerHTML = '';
+  const opt0 = document.createElement('option'); opt0.value=''; opt0.textContent='（未選択）'; sel.appendChild(opt0);
+  const pool = state.recipePools[mealKey] || {};
+  Object.keys(pool).sort((a,b)=>a.localeCompare(b,'ja')).forEach(name=>{
+    const opt = document.createElement('option'); opt.value = name; opt.textContent = name; sel.appendChild(opt);
+  });
+}
+
+function onSelectChange(sel){
+  const day = sel.dataset.day; const meal = sel.dataset.meal; const idx = parseInt(sel.dataset.idx);
+  state.planner[day][meal][idx] = sel.value;
+  updateShopping();
+}
+
+// ========== 買い物リスト生成 ==========
+function buildShoppingFromPlanner(){
+  // { ingredientName: { qty: string, usedIn: ["月/朝:レシピ名" ...] } }
+  const acc = {};
+  for(const day of DAYS){
+    for(const meal of MEALS){
+      const arr = state.planner[day][meal.key];
+      for(let i=0;i<3;i++){
+        const name = arr[i]; if(!name) continue;
+        const pool = state.recipePools[meal.key] || {};
+        const ingr = pool[name] || [];
+        for(const line of ingr){
+          const {iname, qty} = parseIngr(line);
+          if(!iname) continue;
+          if(!acc[iname]) acc[iname] = { qty: '', usedIn: [], checked: false };
+          acc[iname].qty = sumQuantities(acc[iname].qty, qty);
+          acc[iname].usedIn.push(`${day}/${meal.label}：${name}`);
+        }
+      }
+    }
+  }
+  return acc;
+}
+
+function parseIngr(line){
+  if(!line) return {iname:'', qty:''};
+  const s = String(line).trim(); if(!s) return {iname:'', qty:''};
+  const m = s.match(/^(\S+)(?:\s+(.+))?$/);
+  if(!m) return {iname:s, qty:''};
+  return { iname: m[1], qty: (m[2]||'').trim() };
+}
+
+function updateShopping(){
+  const acc = buildShoppingFromPlanner();
+  const container = document.getElementById('shoppingList');
+  container.innerHTML = '';
+  const names = Object.keys(acc).sort((a,b)=>a.localeCompare(b,'ja'));
+  if(names.length===0){ container.innerHTML = '<div class="muted">まだ材料がありません。右の「レシピ管理」からレシピを追加し、週間プランで選択すると材料が表示されます。</div>'; return; }
+
+  for(const name of names){
+    const item = document.createElement('div'); item.className = 'item';
+    const ck = document.createElement('input'); ck.type='checkbox';
+    ck.checked = true; // 追加直後はチェック状態にする
+    const key = `ingr:${name}`;
+    ck.addEventListener('change',()=>{ if(hideChecked) item.style.display = ck.checked? 'none':''; });
+    const nm = document.createElement('div'); nm.className='name'; nm.textContent = name;
+    const qt = document.createElement('div'); qt.className='qty'; qt.textContent = acc[name].qty || '';
+    item.append(ck, nm, qt);
+    item.title = acc[name].usedIn.join('\n');
+    if(hideChecked && ck.checked) item.style.display='none';
+    container.appendChild(item);
+  }
+}
+
+let hideChecked = false;
+
+// ========== レシピ管理 ==========
+function renderRecipeList(){
+  const div = document.getElementById('recipeList');
+  div.innerHTML = '';
+  const mt = document.getElementById('mealType').value;
+  const pool = state.recipePools[mt] || {};
+  const names = Object.keys(pool).sort((a,b)=>a.localeCompare(b,'ja'));
+  if(names.length===0){ div.innerHTML = '<div class="muted">この食事区分のレシピはまだありません。</div>'; return; }
+  names.forEach(name=>{
+    const btn = document.createElement('button'); btn.className='ghost'; btn.textContent = name;
+    btn.addEventListener('click',()=>{
+      document.getElementById('recipeName').value = name;
+      document.getElementById('recipeIngr').value = (pool[name]||[]).join('\n');
+      document.getElementById('btnUpdateRecipe').disabled = false;
+      document.getElementById('btnDeleteRecipe').disabled = false;
+    });
+    div.appendChild(btn);
+  });
+}
+
+function addOrUpdateRecipe(mode){
+  const mt = document.getElementById('mealType').value;
+  const name = document.getElementById('recipeName').value.trim();
+  const lines = document.getElementById('recipeIngr').value.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  if(!name){ alert('レシピ名を入力してください'); return; }
+  if(lines.length===0){ if(!confirm('材料が空です。このまま保存しますか？')) return; }
+  state.recipePools[mt] = state.recipePools[mt] || {};
+  if(mode==='add' && state.recipePools[mt][name]){
+    if(!confirm('同名のレシピが存在します。上書きしますか？')) return;
+  }
+  state.recipePools[mt][name] = lines;
+  document.querySelectorAll(`select[data-meal="${mt}"]`).forEach(sel=>populateSelectOptions(sel, mt));
+  renderRecipeList();
+  updateShopping();
+}
+
+function deleteRecipe(){
+  const mt = document.getElementById('mealType').value;
+  const name = document.getElementById('recipeName').value.trim();
+  if(!name || !state.recipePools[mt][name]){ alert('削除対象のレシピを選択してください'); return; }
+  if(!confirm(`「${name}」を削除しますか？\n週間プランで選択済みの場合は空欄になります。`)) return;
+  delete state.recipePools[mt][name];
+  for(const day of DAYS){
+    const arr = state.planner[day][mt];
+    for(let i=0;i<3;i++){ if(arr[i]===name){ arr[i] = ""; } }
+  }
+  renderPlanner();
+  renderRecipeList();
+  updateShopping();
+}
+
+// ========== 入出力 ==========
+function exportSettings(){
+  const data = JSON.stringify(state, null, 2);
+  const stamp = new Date().toISOString().slice(0,19).replaceAll(':','-');
+  downloadText(`meal-planner-${stamp}.json`, data);
+}
+
+function importSettings(obj){
+  if(!obj || !obj.recipePools || !obj.planner) throw new Error('形式が不正です');
+  state = Object.assign(structuredClone(DEFAULT_DATA), obj);
+  renderPlanner();
+  renderRecipeList();
+  updateShopping();
+}
+
+function exportShoppingTxt(){
+  const acc = buildShoppingFromPlanner();
+  const names = Object.keys(acc).sort((a,b)=>a.localeCompare(b,'ja'));
+  const lines = [
+    '【買い物リスト】',
+    '(チェックは書き出し後のファイルでは保持されません)',
+    ''
+  ];
+  for(const name of names){ lines.push(`- ${name}${acc[name].qty? '：'+acc[name].qty:''}`); }
+  lines.push('', '【使用予定（材料ごと）】');
+  for(const name of names){
+    lines.push(`- ${name}`);
+    acc[name].usedIn.forEach(u=>lines.push(`    ・${u}`));
+  }
+  downloadText('shopping-list.txt', lines.join('\n'));
+}
+
+// ========== 初期化とイベント ==========
+function init(){
+  renderPlanner();
+  document.getElementById('mealType').addEventListener('change', renderRecipeList);
+  document.getElementById('btnAddRecipe').addEventListener('click', ()=>addOrUpdateRecipe('add'));
+  document.getElementById('btnUpdateRecipe').addEventListener('click', ()=>addOrUpdateRecipe('update'));
+  document.getElementById('btnDeleteRecipe').addEventListener('click', deleteRecipe);
+  renderRecipeList();
+
+document.getElementById('btnClearChecked').addEventListener('click', ()=>{
+  hideChecked = !hideChecked;
+  document.getElementById('btnClearChecked').textContent = hideChecked? 'チェック済みを再表示':'チェック済みを非表示';
+  updateShopping();
+});
+
+// すべて外す（実際にチェックを外す動作に修正）
+document.getElementById('btnResetChecks').addEventListener('click', ()=>{
+  hideChecked = false;
+  document.getElementById('btnClearChecked').textContent = 'チェック済みを非表示';
+  document.querySelectorAll('#shoppingList .item').forEach(el=> el.style.display = '');
+  document.querySelectorAll('#shoppingList input[type="checkbox"]').forEach(ck=> ck.checked = false);
+});
+
+// すべてにチェック
+document.getElementById('btnCheckAll').addEventListener('click', ()=>{
+  document.querySelectorAll('#shoppingList input[type="checkbox"]').forEach(ck=>{
+    ck.checked = true;
+    if(hideChecked){ const it = ck.closest('.item'); if(it) it.style.display = 'none'; }
+  });
+});
+
+
+document.getElementById('btnExport').addEventListener('click', exportSettings);
+document.getElementById('btnImport').addEventListener('click', () =>
+  document.getElementById('fileImport').click()
+);
+document.getElementById('fileImport').addEventListener('change', (e) => {
+  const file = e.target.files?.[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const obj = JSON.parse(reader.result);
+      importSettings(obj);
+      alert('読み込みが完了しました');
+    } catch(err) {
+      alert('読み込みに失敗しました: ' + err.message);
+    }
+  };
+  reader.readAsText(file, 'utf-8');
+  e.target.value = '';
+});
+
+document.getElementById('btnExportList').addEventListener('click', exportShoppingTxt);
+
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

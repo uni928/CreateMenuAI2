@@ -111,7 +111,7 @@
       <div class="two">
         <div class="muted">同じ食材名は自動で合算します（数量の先頭が数字の場合に加算）。</div>
         <div class="right">
-          <button id="btnClearChecked" class="ghost">チェック済みを非表示</button>
+          <!--<button id="btnClearChecked" class="ghost">チェック済みを非表示</button>-->
           <button id="btnResetChecks" class="ghost">チェックをすべて外す</button>
           <button id="btnCheckAll" class="ghost">すべてにチェック</button>
         </div>
@@ -511,7 +511,7 @@ function parseIngr(line){
   return { iname: m[1], qty: (m[2]||'').trim() };
 }
 
-function updateShopping(){
+function updateShopping(isCheckNoChange = false){
   const acc = buildShoppingFromPlanner();
   const container = document.getElementById('shoppingList');
   container.innerHTML = '';
@@ -521,7 +521,7 @@ function updateShopping(){
   for(const name of names){
     const item = document.createElement('div'); item.className = 'item';
     const ck = document.createElement('input'); ck.type='checkbox';
-    ck.checked = true; // 追加直後はチェック状態にする
+    if(!isCheckNoChange) ck.checked = true; // 追加直後はチェック状態にする
     const key = `ingr:${name}`;
     ck.addEventListener('change',()=>{ if(hideChecked) item.style.display = ck.checked? 'none':''; });
     const nm = document.createElement('div'); nm.className='name'; nm.textContent = name;
@@ -602,21 +602,42 @@ function importSettings(obj){
 }
 
 function exportShoppingTxt(){
+  // 現在の集計結果
   const acc = buildShoppingFromPlanner();
-  const names = Object.keys(acc).sort((a,b)=>a.localeCompare(b,'ja'));
+
+  // 画面上のチェック状態を DOM から収集（.item → checkbox & .name）
+  const container = document.getElementById('shoppingList');
+  const checkedNames = new Set(
+    Array.from(container.querySelectorAll('.item'))
+      .filter(it => it.querySelector('input[type="checkbox"]')?.checked)
+      .map(it => (it.querySelector('.name')?.textContent || '').trim())
+      .filter(Boolean)
+  );
+
+  // チェックのものだけを対象にする
+  const names = Object.keys(acc)
+    .filter(name => checkedNames.has(name))
+    .sort((a,b)=>a.localeCompare(b,'ja'));
+
   const lines = [
-    '【買い物リスト】',
+    '【買い物リスト】（未チェックのみ出力）',
     '(チェックは書き出し後のファイルでは保持されません)',
     ''
   ];
-  for(const name of names){ lines.push(`- ${name}${acc[name].qty? '：'+acc[name].qty:''}`); }
+
+  for(const name of names){
+    lines.push(`- ${name}${acc[name].qty ? '：' + acc[name].qty : ''}`);
+  }
+
   lines.push('', '【使用予定（材料ごと）】');
   for(const name of names){
     lines.push(`- ${name}`);
-    acc[name].usedIn.forEach(u=>lines.push(`    ・${u}`));
+    (acc[name].usedIn || []).forEach(u => lines.push(`    ・${u}`));
   }
+
   downloadText('shopping-list.txt', lines.join('\n'));
 }
+
 
 // ========== 初期化とイベント ==========
 function init(){
@@ -626,17 +647,17 @@ function init(){
   document.getElementById('btnUpdateRecipe').addEventListener('click', ()=>addOrUpdateRecipe('update'));
   document.getElementById('btnDeleteRecipe').addEventListener('click', deleteRecipe);
   renderRecipeList();
-
+/*
 document.getElementById('btnClearChecked').addEventListener('click', ()=>{
   hideChecked = !hideChecked;
   document.getElementById('btnClearChecked').textContent = hideChecked? 'チェック済みを再表示':'チェック済みを非表示';
-  updateShopping();
+  updateShopping(true);
 });
-
+*/
 // すべて外す（実際にチェックを外す動作に修正）
 document.getElementById('btnResetChecks').addEventListener('click', ()=>{
   hideChecked = false;
-  document.getElementById('btnClearChecked').textContent = 'チェック済みを非表示';
+  //document.getElementById('btnClearChecked').textContent = 'チェック済みを非表示';
   document.querySelectorAll('#shoppingList .item').forEach(el=> el.style.display = '');
   document.querySelectorAll('#shoppingList input[type="checkbox"]').forEach(ck=> ck.checked = false);
 });

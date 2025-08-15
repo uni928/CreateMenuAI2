@@ -514,24 +514,51 @@ function parseIngr(line){
 function updateShopping(isCheckNoChange = false){
   const acc = buildShoppingFromPlanner();
   const container = document.getElementById('shoppingList');
+
+  // ① 再描画前のチェック状態を退避（name -> checked）
+  const prevChecked = new Map();
+  container.querySelectorAll('.item').forEach(it => {
+    const name = (it.querySelector('.name')?.textContent || '').trim();
+    const checked = !!it.querySelector('input[type="checkbox"]')?.checked;
+    if (name) prevChecked.set(name, checked);
+  });
+
+  // ② 再描画
   container.innerHTML = '';
   const names = Object.keys(acc).sort((a,b)=>a.localeCompare(b,'ja'));
-  if(names.length===0){ container.innerHTML = '<div class="muted">まだ材料がありません。右の「レシピ管理」からレシピを追加し、週間プランで選択すると材料が表示されます。</div>'; return; }
+  if(names.length === 0){
+    container.innerHTML = '<div class="muted">まだ材料がありません。右の「レシピ管理」からレシピを追加し、週間プランで選択すると材料が表示されます。</div>';
+    return;
+  }
 
-  for(const name of names){
+  for (const name of names){
     const item = document.createElement('div'); item.className = 'item';
-    const ck = document.createElement('input'); ck.type='checkbox';
-    if(!isCheckNoChange) ck.checked = true; // 追加直後はチェック状態にする
-    const key = `ingr:${name}`;
-    ck.addEventListener('change',()=>{ if(hideChecked) item.style.display = ck.checked? 'none':''; });
-    const nm = document.createElement('div'); nm.className='name'; nm.textContent = name;
-    const qt = document.createElement('div'); qt.className='qty'; qt.textContent = acc[name].qty || '';
+
+    const ck = document.createElement('input'); ck.type = 'checkbox';
+    // ③ チェック状態の決定ロジック
+    //    - 以前からある食材: 以前のチェック状態を維持
+    //    - 新規に増えた食材: isCheckNoChange が true なら未チェック、false ならチェックON
+    if (prevChecked.has(name)){
+      ck.checked = prevChecked.get(name);
+    } else {
+      ck.checked = isCheckNoChange ? false : true;
+    }
+
+    ck.addEventListener('change', () => {
+      if (hideChecked) item.style.display = ck.checked ? 'none' : '';
+    });
+
+    const nm = document.createElement('div'); nm.className = 'name'; nm.textContent = name;
+    const qt = document.createElement('div'); qt.className = 'qty'; qt.textContent = acc[name].qty || '';
+
     item.append(ck, nm, qt);
-    item.title = acc[name].usedIn.join('\n');
-    if(hideChecked && ck.checked) item.style.display='none';
+    item.title = (acc[name].usedIn || []).join('\n');
+
+    if (hideChecked && ck.checked) item.style.display = 'none';
     container.appendChild(item);
   }
 }
+
 
 let hideChecked = false;
 
